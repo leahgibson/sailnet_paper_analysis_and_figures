@@ -108,7 +108,7 @@ class basicVisualization:
 
         year_groups = data.groupby('Year')
 
-        fig, ax = plt.subplots(figsize=(6.6,3), dpi=300)
+        fig, ax = plt.subplots(figsize=(6.6,2.5), dpi=300)
         for idx, group in enumerate(year_groups):
             df = group[1]
             # replace all years with 2023
@@ -136,9 +136,10 @@ class basicVisualization:
         ]
         ax.set_xticks([tick[0] for tick in custom_ticks])
         ax.set_xticklabels([tick[1] for tick in custom_ticks])
-        ax.set_title(bin_name)
+        #ax.set_title(bin_name)
         ax.set_ylabel('cm$^{-3}$')
-        ax.set_xlabel('UTC')
+        #ax.set_xlabel('UTC')
+        plt.tight_layout()
         plt.show()
 
     def plot_psd(self, data, data2=None, data3=None):
@@ -515,8 +516,8 @@ class temporalAnalysis:
         
         month_names = ['Jan', 'Feb', 'March', 'April', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec']
         
-         # plot the particle dize distributions
-        fig, axs = plt.subplots(nrows=1, ncols=12, sharex=True, sharey=True, figsize=(6.6,2.5), dpi=300)
+        # plot the particle dize distributions
+        fig, axs = plt.subplots(nrows=1, ncols=12, sharex=True, sharey=True, figsize=(6.6,3), dpi=300)
         #year_colors = ['blue', 'orange', 'green']
         idx=0
         for year in self.years:
@@ -539,11 +540,11 @@ class temporalAnalysis:
         legend_labels = ['2021', '2022', '2023']
 
         # Create a legend with custom handles and labels
-        axs[-1].legend(handles=legend_handles, labels=legend_labels, loc='upper right')
+        axs[-1].legend(handles=legend_handles, labels=legend_labels, ncols=3, handlelength=0.5, handletextpad=0.5, loc='upper right')
 
-        axs[int(np.round(num_months/2))].set_xlabel('Diameter (nm)')
+        fig.supxlabel('Diameter (nm)')
 
-        
+        plt.tight_layout()
         plt.show()
 
         # # normalized psd plot
@@ -597,7 +598,7 @@ class temporalAnalysis:
         #times, diameters = np.meshgrid(data['DateTime'].tolist(), diameters)
 
         # plot contour plot with log-y axis
-        fig, ax = plt.subplots(figsize=(6.6,3), dpi=300)
+        fig, ax = plt.subplots(figsize=(6.6,2.4), dpi=300)
         contour_levels = np.logspace(np.log10(np.nanmin(dndlogdp_matrix)), np.log10(np.nanmax(dndlogdp_matrix)), 500)
         contour = ax.contourf(times, diameters, dndlogdp_matrix, norm=colors.LogNorm(), levels=contour_levels, cmap='inferno')
         ax.set_yscale('log')
@@ -615,10 +616,11 @@ class temporalAnalysis:
 
         # y-axis label
         ax.set_ylabel('D$_p$ (nm)')
-        ax.set_xlabel('UTC')
+        #ax.set_xlabel('UTC')
 
         ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
 
+        plt.tight_layout()
         plt.show()
  
     def plot_monthly_bin_average(self, data, bin_names):
@@ -674,7 +676,164 @@ class temporalAnalysis:
         plt.legend()
         plt.show()
                 
-  
+    def plot_seasonal_diurnal(self, network_data, site_data, bin_name):
+        """
+        Groups data seasonally (March-May, June-Aug, Sept-Nov, Dec-Feb)
+        and plots average diurnal for network mean with shading based on sites
+
+        Inputs:
+        - network_data: network mean
+        - site_data: site data as a dict
+        - bin_name: name of bin to plot
+        """
+
+    
+        # convert to MST
+        colorado_tz = pytz.timezone('MST')
+        network_data = network_data.copy()
+        network_data['DateTime'] = pd.to_datetime(network_data['DateTime'])
+
+        network_data['DateTime'] = network_data['DateTime'].dt.tz_localize('UTC').dt.tz_convert(colorado_tz)
+        
+        site_dict = {}
+        # group data by meterological seasons
+        for site, df in site_data.items():
+            df = df.copy()
+            df['DateTime'] = pd.to_datetime(df['DateTime'])
+            df['DatetIme'] = df['DateTime'].dt.tz_localize('UTC').dt.tz_convert(colorado_tz)
+            site_dict[site] = df
+        
+        # group data by season
+        network_data['Season'] = network_data['DateTime'].dt.month.apply(self._sort_season)
+        # group by time
+        network_data['Hour'] = network_data['DateTime'].dt.time
+
+        # averages
+        network_averages = network_data.groupby(['Season', 'Hour']).mean().reset_index()
+        network_averages['Hour'] = network_averages['Hour'].apply(lambda x: x.strftime('%H'))
+        network_q1 = network_data.groupby(['Season', 'Hour']).quantile(0.25).reset_index()
+        network_q1['Hour'] = network_q1['Hour'].apply(lambda x: x.strftime('%H'))
+        network_q3 = network_data.groupby(['Season', 'Hour']).quantile(0.75).reset_index()
+        network_q3['Hour'] = network_q3['Hour'].apply(lambda x: x.strftime('%H'))
+        
+        seasonal_averages_dict = {}
+        seasonal_q1_dict = {}
+        seasonal_q3_dict = {}
+        for site, df in site_dict.items():
+            df['Season'] = df['DateTime'].dt.month.apply(self._sort_season)
+            df['Hour'] = df['DateTime'].dt.time
+            seasonal_averages_dict[site] = df.groupby(['Season', 'Hour']).mean().reset_index()
+            seasonal_q1_dict[site] = df.groupby(['Season', 'Hour']).quantile(0.25).reset_index()
+            seasonal_q3_dict[site] = df.groupby(['Season', 'Hour']).quantile(0.75).reset_index()
+        
+        n_sites = len(site_dict.keys())
+
+        fig, axes = plt.subplots(ncols=4, nrows=n_sites, sharey=True, sharex=True, figsize=(6.6,1.2*n_sites), dpi=300)
+
+        for i, site in enumerate(site_dict.keys()):
+            averages = seasonal_averages_dict[site]
+            q1 = seasonal_q1_dict[site]
+            q3 = seasonal_q3_dict[site]
+
+            # convert hours to strings
+            averages['Hour'] = averages['Hour'].apply(lambda x: x.strftime('%H'))
+            q1['Hour'] = q1['Hour'].apply(lambda x: x.strftime('%H'))
+            q3['Hour'] = q3['Hour'].apply(lambda x: x.strftime('%H'))
+
+            # spring
+            spring_avgs = averages[averages['Season'] == 'Spring']
+            spring_q1 = q1[q1['Season'] == 'Spring']
+            spring_q3 = q3[q3['Season'] == 'Spring']
+            network_spring = network_averages[network_averages['Season'] == 'Spring']
+            axes[i,0].plot(spring_avgs['Hour'], spring_avgs[bin_name], color='#f781bf')
+            # fill between q1 and q3
+            axes[i,0].fill_between(spring_q1['Hour'], spring_q1[bin_name], spring_q3[bin_name], color='#f781bf', alpha=0.3)
+            axes[i,0].set_ylabel(f'{site} \n cm$^{-3}$')
+            axes[i,0].set_xticks([0, 12, 23])
+
+            # summer
+            summer_avgs = averages[averages['Season'] == 'Summer']
+            summer_q1 = q1[q1['Season'] == 'Summer']
+            summer_q3 = q3[q3['Season'] == 'Summer']
+            axes[i,1].plot(summer_avgs['Hour'], summer_avgs[bin_name], color='#4daf4a')
+            # fill between q1 and q3
+            axes[i,1].fill_between(summer_q1['Hour'], summer_q1[bin_name], summer_q3[bin_name], color='#4daf4a', alpha=0.3)
+
+            # fall
+            fall_avgs = averages[averages['Season'] == 'Fall']
+            fall_q1 = q1[q1['Season'] == 'Fall']
+            fall_q3 = q3[q3['Season'] == 'Fall']
+            axes[i,2].plot(fall_avgs['Hour'], fall_avgs[bin_name], color='#ff7f00')
+            # fill between q1 and q3
+            axes[i,2].fill_between(fall_q1['Hour'], fall_q1[bin_name], fall_q3[bin_name], color='#ff7f00', alpha=0.3)
+            
+            # winter
+            winter_avgs = averages[averages['Season'] == 'Winter']
+            winter_q1 = q1[q1['Season'] == 'Winter']
+            winter_q3 = q3[q3['Season'] == 'Winter']
+            axes[i,3].plot(winter_avgs['Hour'], winter_avgs[bin_name], color="#377eb8")
+            # fill between q1 and q3
+            axes[i,3].fill_between(winter_q1['Hour'], winter_q1[bin_name], winter_q3[bin_name], color="#377eb8", alpha=0.3)
+     
+        # plot network mean in the last row
+        network_spring = network_averages[network_averages['Season'] == 'Spring']
+        network_summer = network_averages[network_averages['Season'] == 'Summer']
+        network_fall = network_averages[network_averages['Season'] == 'Fall']
+        network_winter = network_averages[network_averages['Season'] == 'Winter']
+
+        # quantiles
+        network_spring_q1 = network_q1[network_q1['Season'] == 'Spring']
+        network_summer_q1 = network_q1[network_q1['Season'] == 'Summer']
+        network_fall_q1 = network_q1[network_q1['Season'] == 'Fall']
+        network_winter_q1 = network_q1[network_q1['Season'] == 'Winter']
+        network_spring_q3 = network_q3[network_q3['Season'] == 'Spring']
+        network_summer_q3 = network_q3[network_q3['Season'] == 'Summer']
+        network_fall_q3 = network_q3[network_q3['Season'] == 'Fall']
+        network_winter_q3 = network_q3[network_q3['Season'] == 'Winter']
+
+        # # spring
+        # axes[-1,0].plot(network_spring['Hour'], network_spring[bin_name], color='#4daf4a')
+        # # fill between q1 and q3
+        # axes[-1,0].fill_between(network_spring_q1['Hour'], network_spring_q1[bin_name], network_spring_q3[bin_name], color='#4daf4a', alpha=0.3)
+        # axes[-1,0].set_ylabel('Network Mean \n cm$^{-3}$')
+
+        # # summer
+        # axes[-1,1].plot(network_summer['Hour'], network_summer[bin_name], color='#4daf4a')
+        # # fill between q1 and q3
+        # axes[-1,1].fill_between(network_summer_q1['Hour'], network_summer_q1[bin_name], network_summer_q3[bin_name], color='#4daf4a', alpha=0.3)
+
+        # # fall
+        # axes[-1,2].plot(network_fall['Hour'], network_fall[bin_name], color='#ff7f00')
+        # # fill between q1 and q3
+        # axes[-1,2].fill_between(network_fall_q1['Hour'], network_fall_q1[bin_name], network_fall_q3[bin_name], color='#ff7f00', alpha=0.3)
+
+        # # winter
+        # axes[-1,3].plot(network_winter['Hour'], network_winter[bin_name], color="#377eb8")
+        # # fill between q1 and q3
+        # axes[-1,3].fill_between(network_winter_q1['Hour'], network_winter_q1[bin_name], network_winter_q3[bin_name], color="#377eb8", alpha=0.3)
+                                          
+        # set season names
+        axes[0,0].set_title("Spring")
+        axes[0,1].set_title("Summer")
+        axes[0,2].set_title("Fall")
+        axes[0,3].set_title("Winter")
+
+        # set xlabel for fig
+        fig.supxlabel('MST')
+
+        plt.tight_layout()
+        plt.savefig('new_fig.png')
+        plt.show()
 
 
+    
+    def _sort_season(self, month):
+        if month in [12, 1, 2]:
+            return 'Winter'
+        elif month in [3, 4, 5]:
+            return 'Spring'
+        elif month in [6, 7, 8]:
+            return 'Summer'
+        elif month in [9, 10, 11]:
+            return 'Fall'
 

@@ -18,7 +18,7 @@ plt.rcParams.update({
     'axes.labelsize': 8,          # Font size for axis labels
     'xtick.labelsize': 8,         # Font size for x-axis ticks
     'ytick.labelsize': 8,         # Font size for y-axis ticks
-    'legend.fontsize': 8,         # Font size for legend
+    'legend.fontsize': 7,         # Font size for legend
     'lines.linewidth': 2.5         # Set linewidth 
 })
 
@@ -58,7 +58,7 @@ class timeseriesVisualization:
         fig, ax = plt.subplots(figsize=(6.6,3), dpi=300)
         for idx, (site, df) in enumerate(dict_of_data.items()):
             df['DateTime'] = pd.to_datetime(df['DateTime'])
-            ax.plot(df['DateTime'], df[bin_name], linewidth=1.5, color=self.colors[idx], label=site)
+            ax.plot(df['DateTime'], df[bin_name], linewidth=1.5, color=self.colors[idx], marker='.', alpha=0.9, linestyle='None', label=site)
 
             # get max and min
             max = df[bin_name].max()
@@ -72,9 +72,10 @@ class timeseriesVisualization:
         
         ax.legend()
         ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
-        ax.set_xlabel('UTC')
+        #ax.set_xlabel('UTC')
         ax.set_ylabel('cm$^{-3}$')
-        ax.set_title(bin_name)
+        #ax.set_title(bin_name)
+        plt.tight_layout()
         plt.show()
 
         # return max and min values, which site, and when
@@ -205,7 +206,6 @@ class spatialVariability:
             analysis_df['DateTime'] = df['DateTime']
             analysis_df = analysis_df.set_index('DateTime')
 
-
             # add to cv_df
             cv_df['cov'] = cov.to_frame(name='cov')
 
@@ -228,6 +228,13 @@ class spatialVariability:
                 analysis_df['DateTime'] = df['DateTime']
                 analysis_df = analysis_df.set_index('DateTime')
 
+                # monthly range
+                analysis_df.index = pd.to_datetime(analysis_df.index)
+                ranges = analysis_df.apply(self._row_range, axis=1)
+                monthly_range = ranges.resample('M').mean().shift(freq='-15D')
+                monthly_range.index = pd.to_datetime(monthly_range.index)
+
+                print(monthly_range)
 
                 # apply min_max scaling
                 site_mins = analysis_df.min(axis=1, skipna=True)
@@ -239,23 +246,46 @@ class spatialVariability:
                 analysis_df = scaled_data.T
 
 
-
                 # compute cov
                 cov = analysis_df.std(axis=1)/analysis_df.mean(axis=1)
+                cov.index = pd.to_datetime(cov.index)
 
                 # add to column in df
                 cv_df[bin] = cov.to_frame(name=bin)
 
+                sizes = bin.split('_')
+
                 # plot
-                fig, ax = plt.subplots(figsize=(6.6,3), dpi=300)
-                ax.plot(cov, linewidth=1.5, label=bin)
+                fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6.6,3), gridspec_kw={'height_ratios': [2, 1]}, dpi=300)
+                ax[0].plot(cov, linewidth=1.5, color='#377eb8', label=f"{sizes[1]} - {sizes[2]} nm", alpha=0.8)
+
+                # compute monthly COV
+                cv_df.index = pd.to_datetime(cv_df.index)
+                monthly_avg = cv_df.resample('M').mean().shift(freq='-15D')
+                monthly_avg.index = pd.to_datetime(monthly_avg.index)
+                
+                print('Monthly values', monthly_avg)
+
+                ax[0].plot(monthly_avg.index, monthly_avg, color='#a65628', marker='s', label='Monthly Average')
+
+                #ax[0].xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
+                # set min y-axis = 0
+                ax[0].set_ylim(bottom=0)
+                ax[0].set_ylabel('Coefficient of Variation')
+                ax[0].legend()
+
+                # plot monthly ranges
+                ax[1].plot(monthly_range.index, monthly_range, marker='.', color='gray')
+                ax[1].set_ylabel('Range (cm$^{-3}$)')
+                ax[1].set_ylim(bottom=0, top=monthly_range.max() + 10)
             
                 # Set x-axis major tick locator
-                ax.set_xlabel('UTC')
-                ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
-                ax.set_ylabel('Coefficient of Variation')
-                ax.legend()
+                #ax.set_xlabel('UTC')
+                
                 #plt.show()
+
+                
+                
 
         if rolling is not None:
             rolling_cov = cv_df.rolling(window=rolling, min_periods=1).mean()
@@ -274,6 +304,7 @@ class spatialVariability:
                 plt.legend()
                 plt.show()
         else:
+            plt.tight_layout()
             plt.show()
 
 
@@ -451,31 +482,64 @@ class spatialVariability:
                     avg = data[[names[0], names[1]]].mean(axis=1)
                     diff_df[key] = (diffs/avg)*100
                 
+                print(diff_df)
                 
-            
+                
                 # compute average of all columns for avg distance
                 mean_diffs = diff_df.mean().tolist()
 
-                print('Differences:',mean_diffs)
+                # plot avg 
+                colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#dede00']
+                # plot the mean values
+                axs[i].plot(distances_list, mean_diffs, marker='.', markersize='5', linestyle='None', color=colors[i])
 
+
+                # # plot differences for each site as a box plot
+                # differences = [diff_df[site].dropna().tolist() for site in distances.keys()]
+
+                # # Set the display width for the box plots (in inches)
+                # display_width = 0.9
+
+                # # Convert display width to data coordinates
+                # transform = axs[i].transData.transform
+                # inverse_transform = axs[i].transData.inverted().transform
+                # display_width_in_data = inverse_transform(transform([0, 0]) + [display_width * fig.dpi, 0])[0] - inverse_transform(transform([0, 0]))[0]
+
+                # axs[i].boxplot(differences, positions=distances_list, widths=display_width_in_data, sym='', showmeans=True, showcaps=False,
+                #                meanprops={'marker': 'o', 'markersize': '3', 'markerfacecolor': colors[i], 'markeredgecolor': colors[i]},
+                #                medianprops={'color':colors[i], 'alpha': 0.5},
+                #                boxprops={'color': 'gray', 'alpha': 0.5},
+                #                whiskerprops={'visible': False})
                 
-                # plot
-                # for i, row in diff_df.iterrows():
-                #     plt.plot(distances_list, row, marker='o', linestyle='None', color='gray', alpha=0.5)
-                    
-                # plot avg diffs
-                axs[i].plot(distances_list, mean_diffs, marker='o', markersize='5', linestyle='None', color=self.colors[i*2])
-                # do linear regressions
-                slope, intercept, r_value, p_value, std_err = stats.linregress(distances_list, mean_diffs)
+                # do linear regressions for means
+                slope, intercept, mean_r_value, p_value, std_err = stats.linregress(distances_list, mean_diffs)
                 #print('slope=',slope,'intercept=', intercept)
                 #print('mean diffs=', mean_diffs)
                 regression_line = [slope*x + intercept for x in distances_list]
-                axs[i].plot(distances_list, regression_line, color='black', linewidth=2)
-                axs[i].set_title(bin + ' r=' + str(round(r_value, 2)))
-                if i==np.floor(len(bin_names)/2):
-                    axs[i].set_xlabel(distance_name)
+                axs[i].plot(distances_list, regression_line, color='black', linewidth=2)#, label=f"R = {round(r_value,2)}")
+
+                # # linear regression of medians
+                # slope, intercept, median_r_value, p_value, std_err = stats.linregress(distances_list, median)
+                # regression_line = [slope*x + intercept for x in distances_list]
+                # axs[i].plot(distances_list, regression_line, color='gray', alpha=0.8, linestyle='--', linewidth=2)#, label=f"R = {round(r_value,2)}")
+
+                
+    
+                split_bin = bin.split('_')
+                axs[i].set_title(f"{split_bin[1]} - {split_bin[2]} nm \n Pearson R = {round(mean_r_value, 2)}")# \n Medians, R = {round(median_r_value, 2)}")
+                # if i==np.floor(len(bin_names)/2):
+                #     axs[i].set_xlabel(distance_name)
                 if i==0:
                     axs[i].set_ylabel('Percent Difference')
+            
+            # set the minimum for x and y axis ranges to be 0
+            for ax in axs:
+                ax.set_ylim(bottom=0)
+                ax.set_xlim(left=0)
+
+            fig.supxlabel(distance_name)
+            # save fig
+            plt.tight_layout()
             plt.show()
 
     def plot_sitess_monthly_diurnal(self, dict_of_data, bin_name):
@@ -705,6 +769,136 @@ class networkDesign:
         axs[1].set_ylabel('Representation Error')
         plt.show()
 
+
+
+    def plot_representation_boxes(self):
+        """
+        Plots the representation error seasonally as box plots
+        """
+
+        n_rows = len(self.representation_dict.keys())
+
+        fix, axes = plt.subplots(nrows=n_rows, ncols=4, sharey=True, sharex=True, figsize=(6.6, 1.75*(n_rows+1)), gridspec_kw={'height_ratios': [2] + [1] * (n_rows-1)}, dpi=300)
+
+        colors = {
+            'gothic': '#ff7f00',
+            'pumphouse': '#377eb8',
+            'snodgrass': '#a65628',
+            'irwin': '#4daf4a',
+            'cbmid': '#f781bf',
+            'cbtop': '#984ea3',
+        }
+
+
+        for i, (bin, df) in enumerate(self.representation_dict.items()):
+            
+            bin_name = bin.split('_')
+
+            # group the data seasonally
+            df['DateTime'] = pd.to_datetime(self.datetimes)
+            df['Season'] = df['DateTime'].dt.month.apply(self._sort_season)
+            for pos, site in enumerate(self.sites):
+                # plot box plot for each season
+             
+                # spring
+                spring_df = df[(df['Season'] == 'Spring')]
+                # remove any rows where df[site] is nan and convert to list
+                spring = spring_df.copy().dropna(subset=[site])
+                axes[i, 0].boxplot(spring[site], positions=[pos], showfliers=False, whis=(5, 95),
+                                   widths=0.75,
+                                   boxprops={'color': colors[site]},
+                                   whiskerprops={'color': colors[site]},
+                                   capprops={'color': colors[site]},
+                                   medianprops={'color': colors[site]},
+                                   )
+                
+                axes[i,0].set_ylabel(f"{bin_name[1]} - {bin_name[2]} nm")
+                # set xticks
+                axes[i,0].set_xticks(range(len(self.sites)))
+                axes[i,0].set_xticklabels(self.sites, rotation=90)
+                # set y-axis gridlines
+                axes[i,0].yaxis.grid(True, which='both', linestyle='--', alpha=0.7)
+                
+
+                # compute the median and IQR
+                self._display_stats(data=spring, site=site, bin=bin, season='spring')
+
+                # summer
+                summer_df = df[(df['Season'] == 'Summer')]
+                # remove rows where df[site] is nan
+                summer = summer_df.copy().dropna(subset=[site])
+                axes[i, 1].boxplot(summer[site], positions=[pos], showfliers=False, whis=(5, 95),
+                                   widths=0.75,
+                                   boxprops={'color': colors[site]},
+                                   whiskerprops={'color': colors[site]},
+                                   capprops={'color': colors[site]},
+                                   medianprops={'color': colors[site]},
+                                   )
+                # set xticks
+                axes[i,1].set_xticks(range(len(self.sites)))
+                axes[i,1].set_xticklabels(self.sites, rotation=90)
+                # set y-axis gridlines
+                axes[i,1].yaxis.grid(True, linestyle='--', alpha=0.7)
+
+                # compute the median and IQR
+                self._display_stats(data=summer, site=site, bin=bin, season='summer')
+
+                # fall
+                fall_df = df[(df['Season'] == 'Fall')]
+                # remove rows where df[site] is nan
+                fall = fall_df.copy().dropna(subset=[site])
+                axes[i, 2].boxplot(fall[site], positions=[pos], showfliers=False, whis=(5, 95),
+                                   widths=0.75,
+                                   boxprops={'color': colors[site]},
+                                   whiskerprops={'color': colors[site]},
+                                   capprops={'color': colors[site]},
+                                   medianprops={'color': colors[site]},
+                                   )
+                # set xticks
+                axes[i,2].set_xticks(range(len(self.sites)))
+                axes[i,2].set_xticklabels(self.sites, rotation=90)
+                # set y-axis gridlines
+                axes[i,2].yaxis.grid(True, linestyle='--', alpha=0.7)
+
+                # compute the median and IQR
+                self._display_stats(data=fall, site=site, bin=bin, season='fall')
+
+                # winter
+                winter_df = df[(df['Season'] == 'Winter')]
+                # remove rows where df[site] is nan
+                winter = winter_df.copy().dropna(subset=[site])
+                axes[i, 3].boxplot(winter[site], positions=[pos], showfliers=False, whis=(5, 95),
+                                   widths=0.75,
+                                   boxprops={'color': colors[site]},
+                                   whiskerprops={'color': colors[site]},
+                                   capprops={'color': colors[site]},
+                                   medianprops={'color': colors[site]},
+                                   )
+                # set xticks
+                axes[i,3].set_xticks(range(len(self.sites)))
+                axes[i,3].set_xticklabels(self.sites, rotation=90)
+                # set y-axis gridlines
+                axes[i,3].yaxis.grid(True, linestyle='--', alpha=0.7)
+
+                # compute the median and IQR
+                self._display_stats(data=winter, site=site, bin=bin, season='winter')
+
+      
+      
+        # label seasons
+        axes[0,0].set_title("Spring")
+        axes[0,1].set_title("Summer")
+        axes[0,2].set_title("Fall")
+        axes[0,3].set_title("Winter")
+
+        plt.tight_layout()
+        # save figure
+        plt.savefig('fig12.png', dpi=300)
+
+
+
+
+
     def plot_representation_bars(self):
         """
         Averages over the representation timeseries to plot the average and range of the
@@ -782,3 +976,19 @@ class networkDesign:
         
 
         return sites, datetimes, representation_dict
+
+    def _sort_season(self, month):
+        if month in [12, 1, 2]:
+            return 'Winter'
+        elif month in [3, 4, 5]:
+            return 'Spring'
+        elif month in [6, 7, 8]:
+            return 'Summer'
+        elif month in [9, 10, 11]:
+            return 'Fall'
+    
+    def _display_stats(self, data, site, bin, season):
+        # compute the median and IQR
+            med = data[site].median()
+            middle_90 = data[site].quantile(0.95) - data[site].quantile(0.05)
+            print(f"{bin} {season} {site}: \n sum: {abs(round(med,3)) + round(middle_90,3)}")

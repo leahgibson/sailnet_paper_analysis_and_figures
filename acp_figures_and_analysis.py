@@ -32,8 +32,6 @@ time_grouped_dict_15D = {}
 for site in sites:
     time_grouped_dict_1H[site] = grouping.temporal_grouping(data_dict[site], averaging_frequency='1H')
     time_grouped_dict_1D[site] = grouping.temporal_grouping(data_dict[site], averaging_frequency='1D')
-    #time_grouped_dict_15D[site] = grouping.temporal_grouping(data_dict[site], averaging_frequency='15D')
-
 
 # group bins 
 bin_grouped_dict_1H = {}
@@ -42,7 +40,6 @@ bin_grouped_dict_15D = {}
 for site in sites:
     bin_grouped_dict_1H[site] = grouping.bin_groupings(time_grouped_dict_1H[site], grouping_option=2)
     bin_grouped_dict_1D[site] = grouping.bin_groupings(time_grouped_dict_1D[site], grouping_option=2)
-    #bin_grouped_dict_15D[site] = grouping.bin_groupings(time_grouped_dict_15D[site], grouping_option=2)
 
 # FIGURE 3: data completion
 data_completeness = dataCompletenessVisualization()
@@ -71,43 +68,33 @@ network_basic_vis = basicVisualization()
 network_basic_vis.plot_overlapping_timeseries(bin_grouped_network_mean_1D, bin_name='dn_170_3400')
 
 
-# FIGURE 7: average particle size distribution averaged monthly
+# FIGURE 6: average particle size distribution averaged monthly
 network_analysis.plot_monthly_psd(network_mean_1H)
 
-# FIGURE 8: timeseries of PSD from the network mean
+# FIGURE 7: timeseries of PSD from the network mean
 network_analysis.plot_psd_timeseries(network_mean_1D)
 
 
-# FIGURE 10: average percent diff
+# FIGURE 10a: average percent diff # elevation
 spatial_analysis = spatialVariability()
-spatial_analysis.sudo_variogram(bin_grouped_dict_1D, bin_names=['dn_170_300', 'dn_300_870', 'dn_870_3400'], distance_type='vertical', sum_headers=False)
+spatial_analysis.sudo_variogram(bin_grouped_dict_1D, bin_names=['dn_170_300', 'dn_300_870', 'dn_870_3400', 'dn_170_3400'], distance_type='vertical', sum_headers=False)
+
+# FIGURE 10b: average percent diff & distance
+spatial_analysis.sudo_variogram(bin_grouped_dict_1D, bin_names=['dn_170_300', 'dn_300_870', 'dn_870_3400', 'dn_170_3400'], distance_type='horizontal', sum_headers=False)
 
 # FIGURE 11: coefficient of variation of data
-#spatial_analysis.coefficient_of_variation(bin_grouped_dict_1D, bin_names=['dn_170_3400'], sum_headers=False)
-spatial_analysis.coefficient_of_variation(bin_grouped_dict_1D, bin_names=['dn_170_3400'], rolling=30, sum_headers=False)
-
-#spatial_analysis.plot_maximum_range(dict_of_data=bin_grouped_dict_1D, bin_name='dn_170_3400', window=30)
-
-
-# # FIGURE: max and min counts
-# spatial_analysis.compute_number_max_min_concentrations(dict_of_data=bin_grouped_dict_1D, bin_name='dn_170_3400')
-
+spatial_analysis.coefficient_of_variation(bin_grouped_dict_1D, bin_names=['dn_170_3400'], sum_headers=False)
 
 # FIGURE 12: representation error timeseries
-network = networkDesign(bin_grouped_dict_1D, bin_headers=['dn_170_300', 'dn_300_870', 'dn_870_3400'])
-network.plot_representation_timeseries()
-
-# FIGURE 13: rep error bars
-network.plot_representation_bars()
+network = networkDesign(bin_grouped_dict_1D, bin_headers=['dn_170_3400', 'dn_170_300', 'dn_300_3400'])
+network.plot_representation_boxes()
 
 
 
-
-
-# FIGURE 6: diurnal cycles avg monthly without wildfire smoke in June 2022
+# FIGURE 8: diurnal cycles avg monthly without wildfire smoke in June 2022
 
 # set up date range and sites for analysis
-start_date = '20211010'
+start_date = '20211010' # 20211010
 end_date = '20230722'
 
 sites = ['pumphouse', 'gothic', 'cbmid', 'irwin', 'snodgrass', 'cbtop']
@@ -141,11 +128,8 @@ bin_grouped_network_mean_1H = grouping.bin_groupings(network_mean_1H, grouping_o
 network_analysis = temporalAnalysis()
 
 
-# FIGURE 6: daily diurnal cycle averaged monthly
-network_analysis.plot_monthly_diurnal(bin_grouped_network_mean_1H, bin_names=['dn_170_3400'])
- 
-
-
+# FIGURE 8
+network_analysis.plot_seasonal_diurnal(network_data=bin_grouped_network_mean_1H, site_data=bin_grouped_dict_1H, bin_name='dn_170_3400')
 
 
 
@@ -263,6 +247,8 @@ plt.show()
 
 
 
+
+
 # FIGURE 1: map of sites
 
 import matplotlib.pyplot as plt
@@ -270,12 +256,12 @@ from pyproj import CRS, Transformer
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 import geopandas as gpd
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 import contextily as cx
 from matplotlib_scalebar.scalebar import ScaleBar
+import osmnx as ox
+import pandas as pd
 
-
-# Create a Cartopy map with OSM (OpenStreetMap) tiles
 
 
 # Define the coordinates of the locations (lon, lat)
@@ -298,27 +284,81 @@ for name, coords in locations.items():
     site_locations['geometry'].append(point)
 
 
-
 # convert to gdf
 gdf = gpd.GeoDataFrame(site_locations, geometry='geometry', crs="EPSG:4326")
 gdf = gdf.set_geometry('geometry')
 wm_gdf = gdf.to_crs('EPSG:3857')
 
+# Calculate map bounds with padding
+padding = 0.18 
+bounds = wm_gdf.total_bounds
+x_min, y_min, x_max, y_max = bounds
+x_pad = (x_max - x_min) * 0.1
+y_pad = (y_max - y_min) * 0.35
+expanded_bounds = [x_min - x_pad, y_min - y_pad, x_max + x_pad, y_max + y_pad]
 
-fig, ax = plt.subplots(figsize=(6,4), dpi=300)
-wm_gdf.plot(ax=ax, color='red', column='Name')
-cx.add_basemap(ax, zoom=12, source=cx.providers.OpenStreetMap.Mapnik)
+# Create subplots
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 4), dpi=300, gridspec_kw={'width_ratios': [2, 1]})
 
-ax.set_xticks([])
-ax.set_yticks([])
+# Plot the detailed map (2/3 screen)
+wm_gdf.plot(ax=ax1, color='red', column='Name')
+cx.add_basemap(ax1, zoom=12, source=cx.providers.OpenTopoMap)
 
-# annotate points with names
+ax1.set_xlim(expanded_bounds[0], expanded_bounds[2])
+ax1.set_ylim(expanded_bounds[1], expanded_bounds[3])
+ax1.set_xticks([])
+ax1.set_yticks([])
+
+# Annotate points with names
 for x, y, label in zip(wm_gdf.geometry.x, wm_gdf.geometry.y, wm_gdf['Name']):
-    ax.text(x+100, y+200, label, fontsize=7, ha='right')
+    ax1.text(x + 200, y + 300, label, fontsize=7, ha='right')
 
 # Add scale bar
 scalebar = ScaleBar(1, location='upper left', scale_loc='top')
-ax.add_artist(scalebar)
+ax1.add_artist(scalebar)
+
+# Create a bounding box for the area of interest
+bbox = box(x_min, y_min, x_max, y_max)
+bbox_gdf = gpd.GeoDataFrame(geometry=[bbox], crs="EPSG:3857") 
+
+# get colorado boundary
+colorado = ox.geocode_to_gdf("Colorado, USA", which_result=1)
+colorado = colorado.to_crs(epsg=3857)
+
+# plot Colorado
+colorado.plot(ax=ax2, color='lightgray', edgecolor='black')
+
+# get cities of colorado
+cities_list = ["Denver", "Grand Junction", "Durango", "Pueblo", "Fort Collins"]
+city_geometries = []
+for city in cities_list:
+    city_gdf = ox.geocode_to_gdf(f"{city}, Colorado, USA", which_result=1)
+    city_geometries.append(city_gdf)
+
+# Combine the city geometries into a single GeoDataFrame
+cities = gpd.GeoDataFrame(pd.concat(city_geometries, ignore_index=True))
+# compute centroids of each city and replace geometry
+cities.geometry = cities.geometry.centroid
+# convert crs
+cities = cities.to_crs(epsg=3857)
+
+# plot and label cities
+cities.plot(ax=ax2, marker='o', markersize=5, color='black')
+for x, y, label in zip(cities.geometry.x, cities.geometry.y, cities['name']):
+    ax2.text(x + 150, y - 200, label, fontsize=6, ha='left', va='bottom')
+
+
+# mark SAIL region
+bbox_gdf.geometry = bbox_gdf.geometry.centroid
+bbox_gdf.plot(ax=ax2, color='blue', marker='*', markersize=50)
+
+ax2.set_xticks([])
+ax2.set_yticks([])
+ax2.set_title('Colorado, USA', fontsize=12)
+
 plt.tight_layout()
+# Save figure
+plt.savefig('fig01.png', dpi=300, bbox_inches='tight')
 plt.show()
+
 

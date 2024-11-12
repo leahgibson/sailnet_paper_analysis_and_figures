@@ -12,8 +12,10 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import xarray as xr
+from brokenaxes import brokenaxes
 import os
 import re
+import itertools
 
 import warnings
 
@@ -225,9 +227,9 @@ def compute_error(tbs_data, data_dict, day):
 
     bin_index = [i for i in range(len(bins))]
 
-
+    #"""
     
-    # FIGURE 14: example flight
+    # FIGURE 13: example flights
     time = tbs_data['time'].to_list()
     dn_170_3615 = tbs_data['dn_170_3615'].to_list()
     alt = tbs_data['alt'].to_list()
@@ -235,7 +237,7 @@ def compute_error(tbs_data, data_dict, day):
     cmap = plt.get_cmap('viridis', len(time))
 
     # Plot a line that changes colors over time
-    fig, ax = plt.subplots(figsize=(6, 3), dpi=300)
+    fig, ax = plt.subplots(figsize=(3, 2.75), dpi=300)
     for i in range(len(time) - 1):
         plt.plot(dn_170_3615[i:i+2], alt[i:i+2], color=cmap(i))
     # Create a color bar and format the time labels as HH:MM
@@ -256,6 +258,7 @@ def compute_error(tbs_data, data_dict, day):
 
     colorbar.set_ticks(ticks)
     colorbar.set_ticklabels(tick_values)
+    #"""
     
     
 
@@ -264,6 +267,7 @@ def compute_error(tbs_data, data_dict, day):
     percent_errors = {}
     absolute_errors = {}
     for site, elevation in elevations.items():
+        #print(day, site)
         percent_errors[site] = []
         absolute_errors[site] = []
         filtered_tbs = tbs_data[np.abs(tbs_data['alt'] - elevation) <= 2.5]
@@ -280,7 +284,7 @@ def compute_error(tbs_data, data_dict, day):
             tbs_end = tbs_time + timedelta(seconds=30)
 
             # select that part of the df
-            site_df = data_dict[site]
+            site_df = data_dict[site].copy()
             df = site_df[(site_df['DateTime'] > tbs_start) & (site_df['DateTime'] < tbs_end)]
 
             # # sum bins 170+
@@ -309,24 +313,30 @@ def compute_error(tbs_data, data_dict, day):
 
             # compute % error = abs(site-flight)/flight
             error = round(((site_avg - row['dn_170_3615'])/row['dn_170_3615'])*100, 2)
-            percent_errors[site].append(abs(error))
+            # append if error not nan
+            if not np.isnan(error):
+                percent_errors[site].append(abs(error))
 
             #compute absolute error abs(site-flight)
             error = round(abs(site_avg - row['dn_170_3615']),2)
-            absolute_errors[site].append(abs(error))
+            #print('abs error', error)
+            if not np.isnan(error):
+                absolute_errors[site].append(abs(error))
 
             
-            
-            # FIG 14 cont
-            plt.plot(site_avg, elevation, marker='*', color=cmap(index), markersize=8) # plot marker of concentration next to line
+            #"""
+            # FIG 13 cont
+            plt.plot(site_avg, elevation, marker='*', markerfacecolor=cmap(index), markeredgecolor='black' ,markersize=7) # plot marker of concentration next to line
             # plt.text(site_avg+0.5, elevation, str(error), color=cmap(index), fontsize=15) # plot error values
-            plt.text(np.min(dn_170_3615)+0.1, elevation, site, fontsize=8) # plot site names
-
-
-    plt.xlabel('Concentration cm$^{-3}$')
+            #plt.text(np.min(dn_170_3615)+0.1, elevation, site, fontsize=8) # plot site names
+            #"""
+    #"""
+    plt.xlabel('Concentration (cm$^{-3}$)')
     plt.ylabel('Altitude (m)')
     plt.title(day)
+    plt.tight_layout()
     plt.show()
+    #"""
     
     
     
@@ -342,7 +352,7 @@ def compute_error(tbs_data, data_dict, day):
         avg_absolute_errors[site] = np.mean(list_of_errors)
     
 
-    return avg_percent_errors, avg_absolute_errors
+    return avg_percent_errors, avg_absolute_errors, percent_errors, absolute_errors
 
 
 ### body ###
@@ -359,6 +369,9 @@ avg_percent_errors_df = pd.DataFrame(columns=headers)
 median_percent_errors_df = pd.DataFrame(columns=headers)
 avg_absolute_errors_df = pd.DataFrame(columns=headers)
 median_absolute_errors_df = pd.DataFrame(columns=headers)
+
+daily_percent_errors_dict = {}
+daily_absolute_errors_dict = {}
 
 # analyze one by one
 for tbs_filename in filenames:
@@ -383,11 +396,21 @@ for tbs_filename in filenames:
         grouped_data[site] = df
     
     # compute error
-    avg_percent_errors, average_absolute_errors = compute_error(tbs_data, grouped_data, day=yyyymmdd)
+    avg_percent_errors, average_absolute_errors, daily_percent_errors, daily_absolute_errors = compute_error(tbs_data, grouped_data, day=yyyymmdd)
     
-    # append to df
+    # append averages to df
     avg_percent_errors_df = avg_percent_errors_df.append(avg_percent_errors, ignore_index=True)
     avg_absolute_errors_df = avg_absolute_errors_df.append(average_absolute_errors, ignore_index=True)
+
+    # append daily values to a dict if there is data for 3 or more sites
+    num_sites = sum(1 for value in daily_percent_errors.values() if value)
+    if num_sites > 2:
+        daily_percent_errors_dict[yyyymmdd] = list(itertools.chain(*daily_percent_errors.values()))
+    num_sites = sum(1 for value in daily_absolute_errors.values() if value)
+    if num_sites > 2:
+        daily_absolute_errors_dict[yyyymmdd] = list(itertools.chain(*daily_absolute_errors.values()))
+
+
 
 
 # convert dates to datetimes
@@ -422,34 +445,85 @@ row_medians_absolute = daily_site_median_absolute.median(axis=1)
 # clear any remaining plot data
 plt.clf()
 
-fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(6,3), dpi=300)
-ax[0].plot(row_means_percent, marker='o', linestyle='None', color='#377eb8', label='Mean Error')
-ax[0].plot(row_medians_percent, marker='^', linestyle='None', color='#ff7f00', label='Median Error')
-ax[0].set_ylabel('Percent Error')
+# fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(6,3), dpi=300)
+# ax[0].plot(row_means_percent, marker='o', linestyle='None', color='#377eb8', label='Mean Error')
+# ax[0].plot(row_medians_percent, marker='^', linestyle='None', color='#ff7f00', label='Median Error')
+# ax[0].set_ylabel('Percent Error')
 
-ax[1].plot(row_means_absolute, marker='o', linestyle='None', color='#377eb8', label='Mean Error')
-ax[1].plot(row_medians_absolute, marker='^', linestyle='None', color='#ff7f00', label='Median Error')
-ax[1].set_ylabel('Absolute Error')
-ax[1].set_xlabel('UTC')
-plt.legend()
+# ax[1].plot(row_means_absolute, marker='o', linestyle='None', color='#377eb8', label='Mean Error')
+# ax[1].plot(row_medians_absolute, marker='^', linestyle='None', color='#ff7f00', label='Median Error')
+# ax[1].set_ylabel('Absolute Error')
+# ax[1].set_xlabel('UTC')
+# plt.legend()
+# #plt.show()
+
+# # group the means and medians by month
+# print(daily_percent_errors_dict)
+# print(daily_absolute_errors_dict)
+
+
+colors_dict = {
+    '202205': '#ff7f00',
+    '202207': '#377eb8',
+    '202301': '#a65628',
+    '202304': '#4daf4a',
+    '202305': '#f781bf',
+    '202306': '#984ea3'
+}
+
+cols_dict = {
+    '202205': 0,
+    '202207': 1,
+    '202301': 2,
+    '202304': 3,
+    '202305': 4,
+    '202306': 5
+}
+
+# sort the dicts chronologically
+daily_percent_errors_dict = dict(sorted(daily_percent_errors_dict.items(), key=lambda x: x[0]))
+daily_absolute_errors_dict = dict(sorted(daily_absolute_errors_dict.items(), key=lambda x: x[0]))
+
+# compute the average percent error for each day
+median_daily_percent_error = []
+for errors in daily_percent_errors_dict.values():
+    median_daily_percent_error.append(np.median(errors))
+
+print(median_daily_percent_error)
+
+# FIG 14
+fig, ax = plt.subplots(figsize=(6.6, 2.75), dpi=300)
+
+for i, day in enumerate(daily_absolute_errors_dict.keys()):
+
+    color = colors_dict[day[0:6]]
+
+    # output the median of the absolute difference and the range
+    median = np.median(daily_absolute_errors_dict[day])
+    daily_range = np.max(daily_absolute_errors_dict[day]) - np.min(daily_absolute_errors_dict[day])
+    print(f"{day}: median: {median}, range: {daily_range}")
+    
+
+
+    # plot absolute errors on bottom plot
+    ax.boxplot(daily_absolute_errors_dict[day], positions=[i], showfliers=False, whis=(5,95),
+                    boxprops={'color':color},
+                    whiskerprops={'color': color},
+                    capprops={'color': color},
+                    medianprops={'color': color}
+                    ) 
+ax.set_ylabel('Absolute Difference (cm$^{-3}$)')
+
+# label x-axis with dates
+ax.set_xticks(range(len(daily_absolute_errors_dict.keys())))
+ax.set_xticklabels(daily_absolute_errors_dict.keys(), rotation=60)
+
+ax2 = ax.twinx()
+
+ax2.plot(median_daily_percent_error, color='gray', alpha=0.6, marker='.')
+ax2.set_ylabel('Median Percent Error (%)', color='gray')
+# set axis to be gray
+ax2.tick_params(axis='y', labelcolor='gray')
+    
+plt.tight_layout()
 plt.show()
-
-
-
-    
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -239,7 +239,7 @@ class dataGroupings:
         - df: df of data
         - grouping_option: int, accepts 1, 2, or 3 corresponding to the three options below:
             - option 1: dn_140_170, dn_170_200, dn_200_300, dn_300_870, dn_870_3400, dn_170_3400, total
-            - option 2: dn_140_155, dn_155_170, dn_170_300, dn_870_3400, dn_170_3400, dn_170_8700, total
+            - option 2: dn_140_155, dn_155_170, dn_170_300, dn_870_3400, dn_170_3400, dn_170_870, dn_300_3400, total
             - option 3: submicron, supermicron, total
         
         Returns: df of binned data
@@ -267,6 +267,7 @@ class dataGroupings:
             grouped_df['dn_870_3400'] = df[['b11', 'b12', 'b13', 'b14', 'b15']].sum(axis=1, skipna=False)
             grouped_df['dn_170_3400'] = df[['b' + str(i) for i in range(2,16)]].sum(axis=1, skipna=False)
             grouped_df['dn_170_870'] = df[['b' + str(i) for i in range(2,11)]].sum(axis=1, skipna=False)
+            grouped_df['dn_300_3400'] = df[['b'+str(i) for i in range(7,16)]].sum(axis=1, skipna=False)
             grouped_df['total'] = df[bins].sum(axis=1, skipna=False)
         
         if grouping_option == 3:
@@ -396,30 +397,23 @@ class dataCompletenessVisualization:
         # plot data
 
         # make own colormap
-        fig, ax = plt.subplots(figsize=(6.6,2.5), dpi=300)
-        cmap = plt.cm.colors.ListedColormap(['#999999', '#dede00'])
+        fig, ax = plt.subplots(figsize=(6.6,1.75), dpi=300)
+        cmap = plt.cm.colors.ListedColormap(['#999999', '#4daf4a'])
         mesh = ax.pcolormesh(times, site_list, binary_lists, cmap=cmap, alpha=0.7)
 
         for i in range(len(site_list)):
             ax.axhline(i + 0.5, color='black', linewidth=1)
 
         # add legend
-        legend = ax.legend(handles=[plt.Rectangle((0, 0), 1, 1, color='#999999', label='nan'),
-                    plt.Rectangle((0, 0), 1, 1, color='#dede00', label='valid data')],
+        legend = ax.legend(handles=[plt.Rectangle((0, 0), 1, 1, color='#999999', label='invalid/missing data'),
+                    plt.Rectangle((0, 0), 1, 1, color='#4daf4a', label='valid data')],
            loc='upper left', fontsize=8, ncols=2)
         
-        ax.set_xlabel('UTC')
+        #ax.set_xlabel('UTC')
         ax.tick_params(axis= 'both', which='major', labelsize=8)
         ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=6))
         plt.show()
 
         print(data_completeness)
-
-        
-
-
-
-
-        
 
 
